@@ -1,0 +1,376 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  LayoutDashboard, 
+  Users, 
+  FileText, 
+  Trash2, 
+  LogOut,
+  Image as ImageIcon,
+  Video,
+  AlertCircle
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithCustomToken, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  onSnapshot, 
+  doc, 
+  deleteDoc 
+} from 'firebase/firestore';
+
+// ==========================================
+// 1. Firebase 初始化与环境配置
+// (必须与前端 App.jsx 保持完全一致才能读取同一份数据)
+// ==========================================
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'wechat-clone-app';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+let app, auth, db;
+
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  console.error("Firebase 初始化失败:", e);
+}
+
+// 默认头像
+const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E";
+
+// ==========================================
+// 2. 主管理组件
+// ==========================================
+export default function AdminDashboard() {
+  const [user, setUser] = useState(null);
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'users', 'posts'
+  const [loading, setLoading] = useState(true);
+  
+  // 数据状态
+  const [profiles, setProfiles] = useState([]);
+  const [posts, setPosts] = useState([]);
+
+  // 1. 处理身份验证 (Admin 也需要鉴权)
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    };
+    initAuth();
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 2. 监听全局数据库 (Profiles & Posts)
+  useEffect(() => {
+    if (!user || !db) return;
+
+    const profilesRef = collection(db, 'artifacts', appId, 'public', 'data', 'profiles');
+    const postsRef = collection(db, 'artifacts', appId, 'public', 'data', 'posts');
+
+    const unsubProfiles = onSnapshot(
+      profilesRef, 
+      (snapshot) => {
+        const profData = [];
+        snapshot.forEach(doc => {
+          profData.push({ uid: doc.id, ...doc.data() });
+        });
+        // 按更新时间降序排列
+        profData.sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
+        setProfiles(profData);
+      }
+    );
+
+    const unsubPosts = onSnapshot(
+      postsRef,
+      (snapshot) => {
+        const postsData = [];
+        snapshot.forEach(doc => {
+          postsData.push({ id: doc.id, ...doc.data() });
+        });
+        // 本地按时间倒序排序
+        postsData.sort((a, b) => b.timestamp - a.timestamp);
+        setPosts(postsData);
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubProfiles();
+      unsubPosts();
+    };
+  }, [user]);
+
+  // ==========================================
+  // 管理操作函数
+  // ==========================================
+  
+  // 删除用户档案
+  const handleDeleteUser = async (uid) => {
+    if (window.confirm("确定要删除该用户档案吗？注意：这也将删除关联数据（需手动实现级联删除）。\n目前仅删除该用户档案资料。")) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', uid));
+      } catch (e) {
+        console.error("删除用户失败", e);
+      }
+    }
+  };
+
+  // 删除动态
+  const handleDeletePost = async (postId) => {
+    if (window.confirm("确定要删除这条动态吗？删除后不可恢复。")) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'posts', postId));
+      } catch (e) {
+        console.error("删除动态失败", e);
+      }
+    }
+  };
+
+  // 辅助函数：根据 UID 查找用户名
+  const getUsername = (uid) => {
+    const profile = profiles.find(p => p.uid === uid);
+    return profile ? profile.username : '未知用户 (已注销)';
+  };
+
+  // ==========================================
+  // UI 渲染模块
+  // ==========================================
+  if (loading) {
+    return <div className="flex h-screen items-center justify-center bg-gray-50 text-gray-500">正在加载管理后台数据...</div>;
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-100 font-sans">
+      
+      {/* 侧边栏 */}
+      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col flex-shrink-0">
+        <div className="h-16 flex items-center px-6 border-b border-slate-800">
+          <h1 className="text-white text-lg font-bold tracking-wider">微信后台管理系统</h1>
+        </div>
+        
+        <nav className="flex-1 py-6 space-y-2 px-3">
+          <NavItem 
+            icon={<LayoutDashboard size={20} />} 
+            label="总览面板" 
+            isActive={activeTab === 'dashboard'} 
+            onClick={() => setActiveTab('dashboard')} 
+          />
+          <NavItem 
+            icon={<Users size={20} />} 
+            label="用户管理" 
+            isActive={activeTab === 'users'} 
+            onClick={() => setActiveTab('users')} 
+          />
+          <NavItem 
+            icon={<FileText size={20} />} 
+            label="动态管理 (朋友圈)" 
+            isActive={activeTab === 'posts'} 
+            onClick={() => setActiveTab('posts')} 
+          />
+        </nav>
+
+        <div className="p-4 border-t border-slate-800">
+          <div className="flex items-center text-sm text-slate-500">
+            <LogOut size={16} className="mr-2" />
+            <span>Admin Auth: {user?.uid.substring(0,6)}</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* 主内容区 */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* 顶部 Header */}
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center px-8 shadow-sm justify-between">
+          <h2 className="text-xl font-semibold text-gray-800">
+            {activeTab === 'dashboard' && '数据总览'}
+            {activeTab === 'users' && '所有用户'}
+            {activeTab === 'posts' && '所有动态内容'}
+          </h2>
+          <div className="flex items-center space-x-2 text-sm text-green-600 bg-green-50 px-3 py-1.5 rounded-full">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <span>数据库实时同步中</span>
+          </div>
+        </header>
+
+        {/* 动态内容渲染 */}
+        <div className="flex-1 overflow-auto p-8 bg-gray-50">
+          
+          {/* 1. 总览面板 */}
+          {activeTab === 'dashboard' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <StatCard title="总注册用户数" value={profiles.length} icon={<Users className="text-blue-500" size={28}/>} />
+                <StatCard title="总动态内容数" value={posts.length} icon={<FileText className="text-green-500" size={28}/>} />
+                <StatCard title="包含多媒体的动态" value={posts.filter(p => p.mediaType !== 'none').length} icon={<ImageIcon className="text-purple-500" size={28}/>} />
+              </div>
+              
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-8">
+                <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+                  <AlertCircle className="text-orange-500 mr-2" size={20} />
+                  系统提示
+                </h3>
+                <p className="text-gray-600 text-sm leading-relaxed">
+                  欢迎使用管理后台。这里的数据与前端的“微信”应用实时同步。当您在这里删除一条朋友圈或者删除一个用户时，所有在线的用户端也会瞬间同步更新。请谨慎进行删除操作。
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* 2. 用户管理面板 */}
+          {activeTab === 'users' && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">头像 & 昵称</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户 UID</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">发布动态数</th>
+                    <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {profiles.length === 0 && (
+                    <tr><td colSpan="4" className="text-center py-10 text-gray-500">暂无用户数据</td></tr>
+                  )}
+                  {profiles.map((profile) => (
+                    <tr key={profile.uid} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            <img className="h-10 w-10 rounded-lg object-cover border border-gray-200" src={profile.avatar || defaultAvatar} alt="" />
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">{profile.username}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-500 font-mono">{profile.uid}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {posts.filter(p => p.uid === profile.uid).length} 条
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button 
+                          onClick={() => handleDeleteUser(profile.uid)}
+                          className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
+                        >
+                          <Trash2 size={16} className="mr-1"/> 删除档案
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 3. 动态管理面板 */}
+          {activeTab === 'posts' && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">发布者</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/2">内容与媒体</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">发布时间</th>
+                    <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {posts.length === 0 && (
+                    <tr><td colSpan="4" className="text-center py-10 text-gray-500">暂无动态数据</td></tr>
+                  )}
+                  {posts.map((post) => (
+                    <tr key={post.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{getUsername(post.uid)}</div>
+                        <div className="text-xs text-gray-400 font-mono mt-1 w-24 truncate">{post.uid}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-900 whitespace-pre-wrap line-clamp-2 max-w-md">
+                          {post.text || <span className="text-gray-400 italic">（无文字）</span>}
+                        </div>
+                        {/* 媒体标识 */}
+                        {post.mediaType !== 'none' && (
+                          <div className="mt-2 flex items-center text-xs text-blue-600 bg-blue-50 w-max px-2 py-1 rounded">
+                            {post.mediaType === 'image' ? <ImageIcon size={14} className="mr-1" /> : <Video size={14} className="mr-1" />}
+                            包含 {post.mediaType === 'image' ? '图片' : '视频'}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(post.timestamp).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button 
+                          onClick={() => handleDeletePost(post.id)}
+                          className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
+                        >
+                          <Trash2 size={16} className="mr-1"/> 移除
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// 侧边栏导航组件
+function NavItem({ icon, label, isActive, onClick }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`w-full flex items-center px-4 py-3 rounded-lg transition-colors ${
+        isActive 
+          ? 'bg-blue-600 text-white shadow-sm' 
+          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+      }`}
+    >
+      {icon}
+      <span className="ml-3 font-medium text-sm">{label}</span>
+    </button>
+  );
+}
+
+// 统计卡片组件
+function StatCard({ title, value, icon }) {
+  return (
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+      <div>
+        <h3 className="text-gray-500 text-sm font-medium mb-1">{title}</h3>
+        <p className="text-3xl font-bold text-gray-800">{value}</p>
+      </div>
+      <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+        {icon}
+      </div>
+    </div>
+  );
+}<script src="admin_api.js"></script>
+</body></html>
