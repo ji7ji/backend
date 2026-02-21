@@ -1,3 +1,5 @@
-# Cloud API Server
+# Cloud Backend & Admin Panel
 
-Run `npm install` then `npm start` to run your database endpoint.
+1. Run `npm install`
+2. Run `npm start`
+3. Open `http://localhost:3000/admin` in your browser to view the admin interface and real database connection.

@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WeChat Mock - 后台管理系统</title>
+    <!-- 引入 Tailwind CSS 进行快速样式构建 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome 图标库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex h-screen overflow-hidden">
+
+    <!-- 侧边栏 (Sidebar) -->
+    <aside class="w-64 bg-gray-800 text-white flex flex-col transition-all duration-300">
+        <div class="h-16 flex items-center justify-center border-b border-gray-700">
+            <i class="fa-solid fa-server text-2xl text-green-400 mr-2"></i>
+            <span class="text-xl font-bold tracking-wider">微信管理后台</span>
+        </div>
+        <nav class="flex-1 overflow-y-auto py-4">
+            <ul class="space-y-2 px-2">
+                <li>
+                    <a href="#" onclick="switchMenu('dashboard')" id="nav-dashboard" class="nav-item flex items-center px-4 py-3 bg-gray-900 rounded-lg text-green-400">
+                        <i class="fa-solid fa-chart-pie w-6"></i>
+                        <span>数据概览</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" onclick="switchMenu('users')" id="nav-users" class="nav-item flex items-center px-4 py-3 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
+                        <i class="fa-solid fa-users w-6"></i>
+                        <span>用户管理</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" onclick="switchMenu('messages')" id="nav-messages" class="nav-item flex items-center px-4 py-3 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
+                        <i class="fa-solid fa-comments w-6"></i>
+                        <span>消息管理</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        <div class="p-4 border-t border-gray-700 text-sm text-gray-400 text-center">
+            Local DB Mode
+        </div>
+    </aside>
+
+    <!-- 主内容区 (Main Content) -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden">
+        <!-- 顶部导航栏 -->
+        <header class="h-16 bg-white shadow-sm flex items-center justify-between px-8 z-10 shrink-0">
+            <h2 id="page-title" class="text-xl font-semibold text-gray-800">数据概览</h2>
+            <div class="flex items-center space-x-4">
+                <button onclick="loadData()" class="text-gray-500 hover:text-green-500 transition-colors" title="刷新数据">
+                    <i class="fa-solid fa-rotate-right text-lg"></i>
+                </button>
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold">A</div>
+                    <span class="text-sm font-medium text-gray-700">Admin</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- 内容渲染区 -->
+        <div class="flex-1 overflow-y-auto p-8 bg-gray-50">
+            
+            <!-- 1. 数据概览 -->
+            <section id="section-dashboard" class="content-section active space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- 统计卡片 1 -->
+                    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-500 flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500 font-medium mb-1">总注册用户数</p>
+                            <h3 class="text-3xl font-bold text-gray-800" id="stat-user-count">0</h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-500 text-xl">
+                            <i class="fa-solid fa-user-check"></i>
+                        </div>
+                    </div>
+                    <!-- 统计卡片 2 -->
+                    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-green-500 flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500 font-medium mb-1">总消息记录数</p>
+                            <h3 class="text-3xl font-bold text-gray-800" id="stat-msg-count">0</h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center text-green-500 text-xl">
+                            <i class="fa-solid fa-message"></i>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm p-6 mt-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">系统状态</h3>
+                    <div class="flex items-center text-green-600">
+                        <i class="fa-solid fa-circle-check mr-2"></i>
+                        <span>IndexedDB (WeChatMockDB) 已连接并正常运行。</span>
+                    </div>
+                    <p class="text-gray-500 text-sm mt-2">提示：由于使用的是前端本地存储，管理后台请在与用户端同一个浏览器下打开，否则无法读取数据。</p>
+                </div>
+            </section>
+
+            <!-- 2. 用户管理 -->
+            <section id="section-users" class="content-section">
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h3 class="text-lg font-bold text-gray-800">用户列表</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-50 text-gray-500 text-sm uppercase tracking-wider">
+                                    <th class="px-6 py-3 font-medium">头像</th>
+                                    <th class="px-6 py-3 font-medium">用户名 (主键)</th>
+                                    <th class="px-6 py-3 font-medium text-right">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-table-body" class="text-gray-700 text-sm divide-y divide-gray-100">
+                                <!-- 用户数据渲染处 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. 消息管理 -->
+            <section id="section-messages" class="content-section">
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h3 class="text-lg font-bold text-gray-800">全局消息监控</h3>
+                        <button onclick="clearAllMessages()" class="text-red-500 hover:text-red-700 text-sm font-medium px-3 py-1 rounded border border-red-200 hover:bg-red-50 transition">
+                            <i class="fa-solid fa-trash-can mr-1"></i> 清空所有消息
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-50 text-gray-500 text-sm uppercase tracking-wider">
+                                    <th class="px-6 py-3 font-medium">ID</th>
+                                    <th class="px-6 py-3 font-medium">发送者</th>
+                                    <th class="px-6 py-3 font-medium">类型</th>
+                                    <th class="px-6 py-3 font-medium w-1/3">内容预览</th>
+                                    <th class="px-6 py-3 font-medium">发送时间</th>
+                                    <th class="px-6 py-3 font-medium text-right">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="message-table-body" class="text-gray-700 text-sm divide-y divide-gray-100">
+                                <!-- 消息数据渲染处 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- 图片预览模态框 -->
+    <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 hidden flex justify-center items-center" onclick="closeImageModal()">
+        <img id="modal-image" src="" class="max-w-3xl max-h-[80vh] rounded-lg shadow-2xl" onclick="event.stopPropagation()">
+        <button class="absolute top-6 right-6 text-white text-3xl hover:text-gray-300" onclick="closeImageModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <!-- ================= 底层逻辑与数据库接口 ================= -->
+    <script>
+        /**
+         * 数据库接口层 (Database Interface) - 针对管理员端扩展
+         * 与前端一致，连接到 WeChatMockDB。增加了删除和清空的方法。
+         */
+        const DB_NAME = 'WeChatMockDB';
+        const DB_VERSION = 1;
+        let dbInstance = null;
+        let objectUrlCache = []; // 记录临时URL用于释放内存
+
+        const AdminDB = {
+            init: function() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    
+                    // 注意：管理端理论上不需要创建表，因为它只读取。但为防首次直接开管理端，保留基础升级逻辑
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains('users')) db.createObjectStore('users', { keyPath: 'username' });
+                        if (!db.objectStoreNames.contains('messages')) {
+                            const msgStore = db.createObjectStore('messages', { keyPath: 'id', autoIncrement: true });
+                            msgStore.createIndex('username', 'username', { unique: false });
+                            msgStore.createIndex('timestamp', 'timestamp', { unique: false });
+                        }
+                    };
+
+                    request.onsuccess = (event) => {
+                        dbInstance = event.target.result;
+                        resolve(dbInstance);
+                    };
+
+                    request.onerror = (event) => reject(event.target.error);
+                });
+            },
+
+            getAllUsers: function() {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['users'], 'readonly');
+                    const request = transaction.objectStore('users').getAll();
+                    request.onsuccess = e => resolve(e.target.result);
+                    request.onerror = e => reject(e.target.error);
+                });
+            },
+
+            deleteUser: function(username) {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['users'], 'readwrite');
+                    const request = transaction.objectStore('users').delete(username);
+                    request.onsuccess = () => resolve();
+                    request.onerror = e => reject(e.target.error);
+                });
+            },
+
+            getAllMessages: function() {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['messages'], 'readonly');
+                    const request = transaction.objectStore('messages').getAll();
+                    request.onsuccess = e => {
+                        let msgs = e.target.result;
+                        msgs.sort((a, b) => b.timestamp - a.timestamp); // 后台默认按时间倒序（最新的在上面）
+                        resolve(msgs);
+                    };
+                    request.onerror = e => reject(e.target.error);
+                });
+            },
+
+            deleteMessage: function(id) {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['messages'], 'readwrite');
+                    const request = transaction.objectStore('messages').delete(id);
+                    request.onsuccess = () => resolve();
+                    request.onerror = e => reject(e.target.error);
+                });
+            },
+
+            clearMessages: function() {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['messages'], 'readwrite');
+                    const request = transaction.objectStore('messages').clear();
+                    request.onsuccess = () => resolve();
+                    request.onerror = e => reject(e.target.error);
+                });
+            }
+        };
+
+        // ================= 页面交互逻辑 =================
+
+        // 页面初始化
+        window.onload = async () => {
+            try {
+                await AdminDB.init();
+                loadData();
+            } catch (err) {
+                alert("无法连接到本地数据库，请确保您的浏览器支持 IndexedDB。");
+                console.error(err);
+            }
+        };
+
+        // 切换左侧菜单
+        const menuTitles = {
+            'dashboard': '数据概览',
+            'users': '用户管理',
+            'messages': '消息管理'
+        };
+
+        function switchMenu(menuId) {
+            // 更新标题
+            document.getElementById('page-title').innerText = menuTitles[menuId];
+            
+            // 更新左侧高亮状态
+            document.querySelectorAll('.nav-item').forEach(el => {
+                el.classList.remove('bg-gray-900', 'text-green-400');
+                el.classList.add('hover:bg-gray-700', 'text-gray-300');
+            });
+            const activeNav = document.getElementById('nav-' + menuId);
+            activeNav.classList.remove('hover:bg-gray-700', 'text-gray-300');
+            activeNav.classList.add('bg-gray-900', 'text-green-400');
+
+            // 切换内容区
+            document.querySelectorAll('.content-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('section-' + menuId).classList.add('active');
+        }
+
+        // 加载并渲染所有数据
+        async function loadData() {
+            clearObjectUrls(); // 释放旧的图片内存
+
+            const users = await AdminDB.getAllUsers();
+            const messages = await AdminDB.getAllMessages();
+
+            // 1. 更新概览
+            document.getElementById('stat-user-count').innerText = users.length;
+            document.getElementById('stat-msg-count').innerText = messages.length;
+
+            // 2. 渲染用户表
+            const userTbody = document.getElementById('user-table-body');
+            userTbody.innerHTML = '';
+            if (users.length === 0) {
+                userTbody.innerHTML = `<tr><td colspan="3" class="px-6 py-8 text-center text-gray-400">暂无用户数据</td></tr>`;
+            } else {
+                users.forEach(u => {
+                    const avatarUrl = createUrl(u.avatar);
+                    userTbody.innerHTML += `
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-3">
+                                <img src="${avatarUrl}" class="w-10 h-10 rounded-lg object-cover border border-gray-200 cursor-pointer hover:opacity-80" onclick="openImageModal('${avatarUrl}')">
+                            </td>
+                            <td class="px-6 py-3 font-medium text-gray-800">${escapeHTML(u.username)}</td>
+                            <td class="px-6 py-3 text-right">
+                                <button onclick="deleteUser('${escapeHTML(u.username)}')" class="text-red-500 hover:bg-red-50 px-3 py-1 rounded transition-colors" title="删除用户">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // 3. 渲染消息表
+            const msgTbody = document.getElementById('message-table-body');
+            msgTbody.innerHTML = '';
+            if (messages.length === 0) {
+                msgTbody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-gray-400">暂无消息记录</td></tr>`;
+            } else {
+                messages.forEach(msg => {
+                    const timeStr = new Date(msg.timestamp).toLocaleString();
+                    let contentPreview = '';
+                    let typeBadge = '';
+
+                    if (msg.type === 'text') {
+                        typeBadge = `<span class="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">文本</span>`;
+                        contentPreview = `<div class="truncate w-64" title="${escapeHTML(msg.content)}">${escapeHTML(msg.content)}</div>`;
+                    } else if (msg.type === 'image') {
+                        typeBadge = `<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs">图片</span>`;
+                        const imgUrl = createUrl(msg.content);
+                        contentPreview = `<img src="${imgUrl}" class="h-10 rounded cursor-pointer border hover:opacity-80" onclick="openImageModal('${imgUrl}')">`;
+                    } else if (msg.type === 'video') {
+                        typeBadge = `<span class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs">视频</span>`;
+                        const vidUrl = createUrl(msg.content);
+                        contentPreview = `
+                            <div class="flex items-center text-gray-500 text-sm">
+                                <i class="fa-solid fa-video mr-2"></i> [视频文件] 
+                                <a href="${vidUrl}" target="_blank" class="ml-2 text-blue-500 hover:underline">新窗口预览</a>
+                            </div>`;
+                    }
+
+                    msgTbody.innerHTML += `
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-4 text-gray-500">#${msg.id}</td>
+                            <td class="px-6 py-4 font-medium">${escapeHTML(msg.username)}</td>
+                            <td class="px-6 py-4">${typeBadge}</td>
+                            <td class="px-6 py-4">${contentPreview}</td>
+                            <td class="px-6 py-4 text-gray-500 text-sm">${timeStr}</td>
+                            <td class="px-6 py-4 text-right">
+                                <button onclick="deleteMessage(${msg.id})" class="text-red-500 hover:bg-red-50 px-3 py-1 rounded transition-colors" title="删除消息">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+
+        // ================= 操作函数 =================
+
+        async function deleteUser(username) {
+            if (confirm(`确定要删除用户 "${username}" 吗？该操作不可恢复！\n注意：该用户的历史消息不会被自动删除。`)) {
+                await AdminDB.deleteUser(username);
+                loadData(); // 刷新数据
+            }
+        }
+
+        async function deleteMessage(id) {
+            if (confirm(`确定要删除消息 #${id} 吗？`)) {
+                await AdminDB.deleteMessage(id);
+                loadData();
+            }
+        }
+
+        async function clearAllMessages() {
+            if (confirm(`警告：您确定要清空所有群聊消息记录吗？此操作无法撤销！`)) {
+                await AdminDB.clearMessages();
+                loadData();
+            }
+        }
+
+        // ================= 工具函数 =================
+
+        // 安全防注入
+        function escapeHTML(str) {
+            if(typeof str !== 'string') return str;
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag)
+            );
+        }
+
+        // 统一处理Blob生成URL并缓存以便清理
+        function createUrl(blob) {
+            if (!blob) return '';
+            const url = URL.createObjectURL(blob);
+            objectUrlCache.push(url);
+            return url;
+        }
+
+        // 释放URL占用内存
+        function clearObjectUrls() {
+            objectUrlCache.forEach(url => URL.revokeObjectURL(url));
+            objectUrlCache = [];
+        }
+
+        // 图片放大查看模态框
+        function openImageModal(url) {
+            document.getElementById('modal-image').src = url;
+            document.getElementById('image-modal').classList.remove('hidden');
+        }
+
+        function closeImageModal() {
+            document.getElementById('image-modal').classList.add('hidden');
+            setTimeout(() => document.getElementById('modal-image').src = '', 300);
+        }
+
+    </script>
+<script src="admin_api.js"></script>
+</body>
+</html>

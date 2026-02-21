@@ -1,8 +1,8 @@
 
 {
-  "name": "levelflow-generated-api",
+  "name": "fullstack-flow-backend",
   "version": "1.0.0",
-  "description": "Auto-generated backend for frontend forms",
+  "description": "Auto-generated backend and admin panel",
   "main": "server.js",
   "scripts": { "start": "node server.js" },
   "dependencies": {
