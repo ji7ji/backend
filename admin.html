@@ -1,376 +1,460 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  Users, 
-  FileText, 
-  Trash2, 
-  LogOut,
-  Image as ImageIcon,
-  Video,
-  AlertCircle
-} from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInAnonymously, 
-  signInWithCustomToken, 
-  onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  onSnapshot, 
-  doc, 
-  deleteDoc 
-} from 'firebase/firestore';
-
-// ==========================================
-// 1. Firebase 初始化与环境配置
-// (必须与前端 App.jsx 保持完全一致才能读取同一份数据)
-// ==========================================
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'wechat-clone-app';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-let app, auth, db;
-
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (e) {
-  console.error("Firebase 初始化失败:", e);
-}
-
-// 默认头像
-const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E";
-
-// ==========================================
-// 2. 主管理组件
-// ==========================================
-export default function AdminDashboard() {
-  const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'users', 'posts'
-  const [loading, setLoading] = useState(true);
-  
-  // 数据状态
-  const [profiles, setProfiles] = useState([]);
-  const [posts, setPosts] = useState([]);
-
-  // 1. 处理身份验证 (Admin 也需要鉴权)
-  useEffect(() => {
-    if (!auth) return;
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WeChat Mock - 后台管理系统</title>
+    <!-- 引入 Tailwind CSS 进行快速样式构建 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome 图标库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         }
-      } catch (err) {
-        console.error("Auth error:", err);
-      }
-    };
-    initAuth();
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex h-screen overflow-hidden">
 
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2. 监听全局数据库 (Profiles & Posts)
-  useEffect(() => {
-    if (!user || !db) return;
-
-    const profilesRef = collection(db, 'artifacts', appId, 'public', 'data', 'profiles');
-    const postsRef = collection(db, 'artifacts', appId, 'public', 'data', 'posts');
-
-    const unsubProfiles = onSnapshot(
-      profilesRef, 
-      (snapshot) => {
-        const profData = [];
-        snapshot.forEach(doc => {
-          profData.push({ uid: doc.id, ...doc.data() });
-        });
-        // 按更新时间降序排列
-        profData.sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
-        setProfiles(profData);
-      }
-    );
-
-    const unsubPosts = onSnapshot(
-      postsRef,
-      (snapshot) => {
-        const postsData = [];
-        snapshot.forEach(doc => {
-          postsData.push({ id: doc.id, ...doc.data() });
-        });
-        // 本地按时间倒序排序
-        postsData.sort((a, b) => b.timestamp - a.timestamp);
-        setPosts(postsData);
-        setLoading(false);
-      }
-    );
-
-    return () => {
-      unsubProfiles();
-      unsubPosts();
-    };
-  }, [user]);
-
-  // ==========================================
-  // 管理操作函数
-  // ==========================================
-  
-  // 删除用户档案
-  const handleDeleteUser = async (uid) => {
-    if (window.confirm("确定要删除该用户档案吗？注意：这也将删除关联数据（需手动实现级联删除）。\n目前仅删除该用户档案资料。")) {
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', uid));
-      } catch (e) {
-        console.error("删除用户失败", e);
-      }
-    }
-  };
-
-  // 删除动态
-  const handleDeletePost = async (postId) => {
-    if (window.confirm("确定要删除这条动态吗？删除后不可恢复。")) {
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'posts', postId));
-      } catch (e) {
-        console.error("删除动态失败", e);
-      }
-    }
-  };
-
-  // 辅助函数：根据 UID 查找用户名
-  const getUsername = (uid) => {
-    const profile = profiles.find(p => p.uid === uid);
-    return profile ? profile.username : '未知用户 (已注销)';
-  };
-
-  // ==========================================
-  // UI 渲染模块
-  // ==========================================
-  if (loading) {
-    return <div className="flex h-screen items-center justify-center bg-gray-50 text-gray-500">正在加载管理后台数据...</div>;
-  }
-
-  return (
-    <div className="flex h-screen bg-gray-100 font-sans">
-      
-      {/* 侧边栏 */}
-      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col flex-shrink-0">
-        <div className="h-16 flex items-center px-6 border-b border-slate-800">
-          <h1 className="text-white text-lg font-bold tracking-wider">微信后台管理系统</h1>
+    <!-- 侧边栏 (Sidebar) -->
+    <aside class="w-64 bg-gray-800 text-white flex flex-col transition-all duration-300">
+        <div class="h-16 flex items-center justify-center border-b border-gray-700">
+            <i class="fa-solid fa-server text-2xl text-green-400 mr-2"></i>
+            <span class="text-xl font-bold tracking-wider">微信管理后台</span>
         </div>
-        
-        <nav className="flex-1 py-6 space-y-2 px-3">
-          <NavItem 
-            icon={<LayoutDashboard size={20} />} 
-            label="总览面板" 
-            isActive={activeTab === 'dashboard'} 
-            onClick={() => setActiveTab('dashboard')} 
-          />
-          <NavItem 
-            icon={<Users size={20} />} 
-            label="用户管理" 
-            isActive={activeTab === 'users'} 
-            onClick={() => setActiveTab('users')} 
-          />
-          <NavItem 
-            icon={<FileText size={20} />} 
-            label="动态管理 (朋友圈)" 
-            isActive={activeTab === 'posts'} 
-            onClick={() => setActiveTab('posts')} 
-          />
+        <nav class="flex-1 overflow-y-auto py-4">
+            <ul class="space-y-2 px-2">
+                <li>
+                    <a href="#" onclick="switchMenu('dashboard')" id="nav-dashboard" class="nav-item flex items-center px-4 py-3 bg-gray-900 rounded-lg text-green-400">
+                        <i class="fa-solid fa-chart-pie w-6"></i>
+                        <span>数据概览</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" onclick="switchMenu('users')" id="nav-users" class="nav-item flex items-center px-4 py-3 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
+                        <i class="fa-solid fa-users w-6"></i>
+                        <span>用户管理</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" onclick="switchMenu('messages')" id="nav-messages" class="nav-item flex items-center px-4 py-3 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
+                        <i class="fa-solid fa-comments w-6"></i>
+                        <span>消息管理</span>
+                    </a>
+                </li>
+            </ul>
         </nav>
-
-        <div className="p-4 border-t border-slate-800">
-          <div className="flex items-center text-sm text-slate-500">
-            <LogOut size={16} className="mr-2" />
-            <span>Admin Auth: {user?.uid.substring(0,6)}</span>
-          </div>
+        <div class="p-4 border-t border-gray-700 text-sm text-gray-400 text-center">
+            Local DB Mode
         </div>
-      </aside>
+    </aside>
 
-      {/* 主内容区 */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* 顶部 Header */}
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center px-8 shadow-sm justify-between">
-          <h2 className="text-xl font-semibold text-gray-800">
-            {activeTab === 'dashboard' && '数据总览'}
-            {activeTab === 'users' && '所有用户'}
-            {activeTab === 'posts' && '所有动态内容'}
-          </h2>
-          <div className="flex items-center space-x-2 text-sm text-green-600 bg-green-50 px-3 py-1.5 rounded-full">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span>数据库实时同步中</span>
-          </div>
+    <!-- 主内容区 (Main Content) -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden">
+        <!-- 顶部导航栏 -->
+        <header class="h-16 bg-white shadow-sm flex items-center justify-between px-8 z-10 shrink-0">
+            <h2 id="page-title" class="text-xl font-semibold text-gray-800">数据概览</h2>
+            <div class="flex items-center space-x-4">
+                <button onclick="loadData()" class="text-gray-500 hover:text-green-500 transition-colors" title="刷新数据">
+                    <i class="fa-solid fa-rotate-right text-lg"></i>
+                </button>
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold">A</div>
+                    <span class="text-sm font-medium text-gray-700">Admin</span>
+                </div>
+            </div>
         </header>
 
-        {/* 动态内容渲染 */}
-        <div className="flex-1 overflow-auto p-8 bg-gray-50">
-          
-          {/* 1. 总览面板 */}
-          {activeTab === 'dashboard' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard title="总注册用户数" value={profiles.length} icon={<Users className="text-blue-500" size={28}/>} />
-                <StatCard title="总动态内容数" value={posts.length} icon={<FileText className="text-green-500" size={28}/>} />
-                <StatCard title="包含多媒体的动态" value={posts.filter(p => p.mediaType !== 'none').length} icon={<ImageIcon className="text-purple-500" size={28}/>} />
-              </div>
-              
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-8">
-                <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
-                  <AlertCircle className="text-orange-500 mr-2" size={20} />
-                  系统提示
-                </h3>
-                <p className="text-gray-600 text-sm leading-relaxed">
-                  欢迎使用管理后台。这里的数据与前端的“微信”应用实时同步。当您在这里删除一条朋友圈或者删除一个用户时，所有在线的用户端也会瞬间同步更新。请谨慎进行删除操作。
-                </p>
-              </div>
-            </div>
-          )}
+        <!-- 内容渲染区 -->
+        <div class="flex-1 overflow-y-auto p-8 bg-gray-50">
+            
+            <!-- 1. 数据概览 -->
+            <section id="section-dashboard" class="content-section active space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- 统计卡片 1 -->
+                    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-500 flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500 font-medium mb-1">总注册用户数</p>
+                            <h3 class="text-3xl font-bold text-gray-800" id="stat-user-count">0</h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-500 text-xl">
+                            <i class="fa-solid fa-user-check"></i>
+                        </div>
+                    </div>
+                    <!-- 统计卡片 2 -->
+                    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-green-500 flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500 font-medium mb-1">总消息记录数</p>
+                            <h3 class="text-3xl font-bold text-gray-800" id="stat-msg-count">0</h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center text-green-500 text-xl">
+                            <i class="fa-solid fa-message"></i>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm p-6 mt-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">系统状态</h3>
+                    <div class="flex items-center text-green-600">
+                        <i class="fa-solid fa-circle-check mr-2"></i>
+                        <span>IndexedDB (WeChatMockDB) 已连接并正常运行。</span>
+                    </div>
+                    <p class="text-gray-500 text-sm mt-2">提示：由于使用的是前端本地存储，管理后台请在与用户端同一个浏览器下打开，否则无法读取数据。</p>
+                </div>
+            </section>
 
-          {/* 2. 用户管理面板 */}
-          {activeTab === 'users' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">头像 & 昵称</th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户 UID</th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">发布动态数</th>
-                    <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {profiles.length === 0 && (
-                    <tr><td colSpan="4" className="text-center py-10 text-gray-500">暂无用户数据</td></tr>
-                  )}
-                  {profiles.map((profile) => (
-                    <tr key={profile.uid} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
-                            <img className="h-10 w-10 rounded-lg object-cover border border-gray-200" src={profile.avatar || defaultAvatar} alt="" />
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">{profile.username}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-500 font-mono">{profile.uid}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {posts.filter(p => p.uid === profile.uid).length} 条
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button 
-                          onClick={() => handleDeleteUser(profile.uid)}
-                          className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
-                        >
-                          <Trash2 size={16} className="mr-1"/> 删除档案
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+            <!-- 2. 用户管理 -->
+            <section id="section-users" class="content-section">
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h3 class="text-lg font-bold text-gray-800">用户列表</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-50 text-gray-500 text-sm uppercase tracking-wider">
+                                    <th class="px-6 py-3 font-medium">头像</th>
+                                    <th class="px-6 py-3 font-medium">用户名 (主键)</th>
+                                    <th class="px-6 py-3 font-medium text-right">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-table-body" class="text-gray-700 text-sm divide-y divide-gray-100">
+                                <!-- 用户数据渲染处 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
 
-          {/* 3. 动态管理面板 */}
-          {activeTab === 'posts' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">发布者</th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/2">内容与媒体</th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">发布时间</th>
-                    <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {posts.length === 0 && (
-                    <tr><td colSpan="4" className="text-center py-10 text-gray-500">暂无动态数据</td></tr>
-                  )}
-                  {posts.map((post) => (
-                    <tr key={post.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{getUsername(post.uid)}</div>
-                        <div className="text-xs text-gray-400 font-mono mt-1 w-24 truncate">{post.uid}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900 whitespace-pre-wrap line-clamp-2 max-w-md">
-                          {post.text || <span className="text-gray-400 italic">（无文字）</span>}
-                        </div>
-                        {/* 媒体标识 */}
-                        {post.mediaType !== 'none' && (
-                          <div className="mt-2 flex items-center text-xs text-blue-600 bg-blue-50 w-max px-2 py-1 rounded">
-                            {post.mediaType === 'image' ? <ImageIcon size={14} className="mr-1" /> : <Video size={14} className="mr-1" />}
-                            包含 {post.mediaType === 'image' ? '图片' : '视频'}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(post.timestamp).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button 
-                          onClick={() => handleDeletePost(post.id)}
-                          className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
-                        >
-                          <Trash2 size={16} className="mr-1"/> 移除
+            <!-- 3. 消息管理 -->
+            <section id="section-messages" class="content-section">
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h3 class="text-lg font-bold text-gray-800">全局消息监控</h3>
+                        <button onclick="clearAllMessages()" class="text-red-500 hover:text-red-700 text-sm font-medium px-3 py-1 rounded border border-red-200 hover:bg-red-50 transition">
+                            <i class="fa-solid fa-trash-can mr-1"></i> 清空所有消息
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-50 text-gray-500 text-sm uppercase tracking-wider">
+                                    <th class="px-6 py-3 font-medium">ID</th>
+                                    <th class="px-6 py-3 font-medium">发送者</th>
+                                    <th class="px-6 py-3 font-medium">类型</th>
+                                    <th class="px-6 py-3 font-medium w-1/3">内容预览</th>
+                                    <th class="px-6 py-3 font-medium">发送时间</th>
+                                    <th class="px-6 py-3 font-medium text-right">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="message-table-body" class="text-gray-700 text-sm divide-y divide-gray-100">
+                                <!-- 消息数据渲染处 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
 
         </div>
-      </main>
-    </div>
-  );
-}
+    </main>
 
-// 侧边栏导航组件
-function NavItem({ icon, label, isActive, onClick }) {
-  return (
-    <button 
-      onClick={onClick}
-      className={`w-full flex items-center px-4 py-3 rounded-lg transition-colors ${
-        isActive 
-          ? 'bg-blue-600 text-white shadow-sm' 
-          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-      }`}
-    >
-      {icon}
-      <span className="ml-3 font-medium text-sm">{label}</span>
-    </button>
-  );
-}
-
-// 统计卡片组件
-function StatCard({ title, value, icon }) {
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
-      <div>
-        <h3 className="text-gray-500 text-sm font-medium mb-1">{title}</h3>
-        <p className="text-3xl font-bold text-gray-800">{value}</p>
-      </div>
-      <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-        {icon}
-      </div>
+    <!-- 图片预览模态框 -->
+    <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 hidden flex justify-center items-center" onclick="closeImageModal()">
+        <img id="modal-image" src="" class="max-w-3xl max-h-[80vh] rounded-lg shadow-2xl" onclick="event.stopPropagation()">
+        <button class="absolute top-6 right-6 text-white text-3xl hover:text-gray-300" onclick="closeImageModal()"><i class="fa-solid fa-xmark"></i></button>
     </div>
-  );
-}<script src="admin_api.js"></script>
-</body></html>
+
+    <!-- ================= 底层逻辑与数据库接口 ================= -->
+    <script>
+        /**
+         * 数据库接口层 (Database Interface) - 针对管理员端扩展
+         * 与前端一致，连接到 WeChatMockDB。增加了删除和清空的方法。
+         */
+        const DB_NAME = 'WeChatMockDB';
+        const DB_VERSION = 1;
+        let dbInstance = null;
+        let objectUrlCache = []; // 记录临时URL用于释放内存
+
+        const AdminDB = {
+            init: function() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    
+                    // 注意：管理端理论上不需要创建表，因为它只读取。但为防首次直接开管理端，保留基础升级逻辑
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains('users')) db.createObjectStore('users', { keyPath: 'username' });
+                        if (!db.objectStoreNames.contains('messages')) {
+                            const msgStore = db.createObjectStore('messages', { keyPath: 'id', autoIncrement: true });
+                            msgStore.createIndex('username', 'username', { unique: false });
+                            msgStore.createIndex('timestamp', 'timestamp', { unique: false });
+                        }
+                    };
+
+                    request.onsuccess = (event) => {
+                        dbInstance = event.target.result;
+                        resolve(dbInstance);
+                    };
+
+                    request.onerror = (event) => reject(event.target.error);
+                });
+            },
+
+            getAllUsers: function() {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['users'], 'readonly');
+                    const request = transaction.objectStore('users').getAll();
+                    request.onsuccess = e => resolve(e.target.result);
+                    request.onerror = e => reject(e.target.error);
+                });
+            },
+
+            deleteUser: function(username) {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['users'], 'readwrite');
+                    const request = transaction.objectStore('users').delete(username);
+                    request.onsuccess = () => resolve();
+                    request.onerror = e => reject(e.target.error);
+                });
+            },
+
+            getAllMessages: function() {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['messages'], 'readonly');
+                    const request = transaction.objectStore('messages').getAll();
+                    request.onsuccess = e => {
+                        let msgs = e.target.result;
+                        msgs.sort((a, b) => b.timestamp - a.timestamp); // 后台默认按时间倒序（最新的在上面）
+                        resolve(msgs);
+                    };
+                    request.onerror = e => reject(e.target.error);
+                });
+            },
+
+            deleteMessage: function(id) {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['messages'], 'readwrite');
+                    const request = transaction.objectStore('messages').delete(id);
+                    request.onsuccess = () => resolve();
+                    request.onerror = e => reject(e.target.error);
+                });
+            },
+
+            clearMessages: function() {
+                return new Promise((resolve, reject) => {
+                    const transaction = dbInstance.transaction(['messages'], 'readwrite');
+                    const request = transaction.objectStore('messages').clear();
+                    request.onsuccess = () => resolve();
+                    request.onerror = e => reject(e.target.error);
+                });
+            }
+        };
+
+        // ================= 页面交互逻辑 =================
+
+        // 页面初始化
+        window.onload = async () => {
+            try {
+                await AdminDB.init();
+                loadData();
+            } catch (err) {
+                alert("无法连接到本地数据库，请确保您的浏览器支持 IndexedDB。");
+                console.error(err);
+            }
+        };
+
+        // 切换左侧菜单
+        const menuTitles = {
+            'dashboard': '数据概览',
+            'users': '用户管理',
+            'messages': '消息管理'
+        };
+
+        function switchMenu(menuId) {
+            // 更新标题
+            document.getElementById('page-title').innerText = menuTitles[menuId];
+            
+            // 更新左侧高亮状态
+            document.querySelectorAll('.nav-item').forEach(el => {
+                el.classList.remove('bg-gray-900', 'text-green-400');
+                el.classList.add('hover:bg-gray-700', 'text-gray-300');
+            });
+            const activeNav = document.getElementById('nav-' + menuId);
+            activeNav.classList.remove('hover:bg-gray-700', 'text-gray-300');
+            activeNav.classList.add('bg-gray-900', 'text-green-400');
+
+            // 切换内容区
+            document.querySelectorAll('.content-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('section-' + menuId).classList.add('active');
+        }
+
+        // 加载并渲染所有数据
+        async function loadData() {
+            clearObjectUrls(); // 释放旧的图片内存
+
+            const users = await AdminDB.getAllUsers();
+            const messages = await AdminDB.getAllMessages();
+
+            // 1. 更新概览
+            document.getElementById('stat-user-count').innerText = users.length;
+            document.getElementById('stat-msg-count').innerText = messages.length;
+
+            // 2. 渲染用户表
+            const userTbody = document.getElementById('user-table-body');
+            userTbody.innerHTML = '';
+            if (users.length === 0) {
+                userTbody.innerHTML = `<tr><td colspan="3" class="px-6 py-8 text-center text-gray-400">暂无用户数据</td></tr>`;
+            } else {
+                users.forEach(u => {
+                    const avatarUrl = createUrl(u.avatar);
+                    userTbody.innerHTML += `
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-3">
+                                <img src="${avatarUrl}" class="w-10 h-10 rounded-lg object-cover border border-gray-200 cursor-pointer hover:opacity-80" onclick="openImageModal('${avatarUrl}')">
+                            </td>
+                            <td class="px-6 py-3 font-medium text-gray-800">${escapeHTML(u.username)}</td>
+                            <td class="px-6 py-3 text-right">
+                                <button onclick="deleteUser('${escapeHTML(u.username)}')" class="text-red-500 hover:bg-red-50 px-3 py-1 rounded transition-colors" title="删除用户">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // 3. 渲染消息表
+            const msgTbody = document.getElementById('message-table-body');
+            msgTbody.innerHTML = '';
+            if (messages.length === 0) {
+                msgTbody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-gray-400">暂无消息记录</td></tr>`;
+            } else {
+                messages.forEach(msg => {
+                    const timeStr = new Date(msg.timestamp).toLocaleString();
+                    let contentPreview = '';
+                    let typeBadge = '';
+
+                    if (msg.type === 'text') {
+                        typeBadge = `<span class="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">文本</span>`;
+                        contentPreview = `<div class="truncate w-64" title="${escapeHTML(msg.content)}">${escapeHTML(msg.content)}</div>`;
+                    } else if (msg.type === 'image') {
+                        typeBadge = `<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs">图片</span>`;
+                        const imgUrl = createUrl(msg.content);
+                        contentPreview = `<img src="${imgUrl}" class="h-10 rounded cursor-pointer border hover:opacity-80" onclick="openImageModal('${imgUrl}')">`;
+                    } else if (msg.type === 'video') {
+                        typeBadge = `<span class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs">视频</span>`;
+                        const vidUrl = createUrl(msg.content);
+                        contentPreview = `
+                            <div class="flex items-center text-gray-500 text-sm">
+                                <i class="fa-solid fa-video mr-2"></i> [视频文件] 
+                                <a href="${vidUrl}" target="_blank" class="ml-2 text-blue-500 hover:underline">新窗口预览</a>
+                            </div>`;
+                    }
+
+                    msgTbody.innerHTML += `
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-4 text-gray-500">#${msg.id}</td>
+                            <td class="px-6 py-4 font-medium">${escapeHTML(msg.username)}</td>
+                            <td class="px-6 py-4">${typeBadge}</td>
+                            <td class="px-6 py-4">${contentPreview}</td>
+                            <td class="px-6 py-4 text-gray-500 text-sm">${timeStr}</td>
+                            <td class="px-6 py-4 text-right">
+                                <button onclick="deleteMessage(${msg.id})" class="text-red-500 hover:bg-red-50 px-3 py-1 rounded transition-colors" title="删除消息">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+
+        // ================= 操作函数 =================
+
+        async function deleteUser(username) {
+            if (confirm(`确定要删除用户 "${username}" 吗？该操作不可恢复！\n注意：该用户的历史消息不会被自动删除。`)) {
+                await AdminDB.deleteUser(username);
+                loadData(); // 刷新数据
+            }
+        }
+
+        async function deleteMessage(id) {
+            if (confirm(`确定要删除消息 #${id} 吗？`)) {
+                await AdminDB.deleteMessage(id);
+                loadData();
+            }
+        }
+
+        async function clearAllMessages() {
+            if (confirm(`警告：您确定要清空所有群聊消息记录吗？此操作无法撤销！`)) {
+                await AdminDB.clearMessages();
+                loadData();
+            }
+        }
+
+        // ================= 工具函数 =================
+
+        // 安全防注入
+        function escapeHTML(str) {
+            if(typeof str !== 'string') return str;
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag)
+            );
+        }
+
+        // 统一处理Blob生成URL并缓存以便清理
+        function createUrl(blob) {
+            if (!blob) return '';
+            const url = URL.createObjectURL(blob);
+            objectUrlCache.push(url);
+            return url;
+        }
+
+        // 释放URL占用内存
+        function clearObjectUrls() {
+            objectUrlCache.forEach(url => URL.revokeObjectURL(url));
+            objectUrlCache = [];
+        }
+
+        // 图片放大查看模态框
+        function openImageModal(url) {
+            document.getElementById('modal-image').src = url;
+            document.getElementById('image-modal').classList.remove('hidden');
+        }
+
+        function closeImageModal() {
+            document.getElementById('image-modal').classList.add('hidden');
+            setTimeout(() => document.getElementById('modal-image').src = '', 300);
+        }
+
+    </script>
+<script src="admin_api.js"></script>
+</body>
+</html>
